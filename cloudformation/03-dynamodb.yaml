@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TechMart - DynamoDB tables: ProductEmbeddings, UserInteractions,
+  UserRecommendations. Termasuk 2 tabel log hasil inference Lambda
+  (MLPredictionResults, MLForecastResults) dengan TTL 24 jam.
+
+Resources:
+
+  ProductEmbeddingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ProductEmbeddings
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: product_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: product_id
+          KeyType: HASH
+
+  UserInteractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: UserInteractions
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 10
+        WriteCapacityUnits: 10
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+
+  UserRecommendationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: UserRecommendations
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+
+  MLPredictionResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: MLPredictionResults
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: request_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: request_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  MLForecastResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: MLForecastResults
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: request_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: request_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+Outputs:
+  ProductEmbeddingsTableName:
+    Value: !Ref ProductEmbeddingsTable
+  UserInteractionsTableName:
+    Value: !Ref UserInteractionsTable
+  UserRecommendationsTableName:
+    Value: !Ref UserRecommendationsTable
+  MLPredictionResultsTableName:
+    Value: !Ref MLPredictionResultsTable
+  MLForecastResultsTableName:
+    Value: !Ref MLForecastResultsTable

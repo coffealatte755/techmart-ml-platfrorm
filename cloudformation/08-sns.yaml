@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TechMart - SNS Topic untuk alerting/notification, dengan email subscription.
+
+Parameters:
+  ProvinceName:
+    Type: String
+  StudentName:
+    Type: String
+  NotificationEmail:
+    Type: String
+    Default: handi@seamolec.org
+
+Resources:
+  TechMartSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "techmart-sns-${ProvinceName}-${StudentName}"
+      DisplayName: "TechMart Alerts & Notifications"
+
+  TechMartSnsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref TechMartSnsTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+Outputs:
+  TopicArn:
+    Value: !Ref TechMartSnsTopic
+    Export:
+      Name: techmart-sns-topic-arn

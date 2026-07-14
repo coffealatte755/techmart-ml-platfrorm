@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TechMart - REST API (techmart-ml-api) dengan endpoint /predictions (POST)
+  dan /forecasts (POST), proxy ke Lambda, dilindungi API Key (techmart-api-key)
+  + usage plan (throttling & quota), endpoint type REGIONAL (dualstack).
+
+Parameters:
+  PredictionFunctionArn:
+    Type: String
+  ForecastingFunctionArn:
+    Type: String
+
+Resources:
+
+  TechMartRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: techmart-ml-api
+      Description: "TechMart ML Recommendation & Forecasting API"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  PredictionsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref TechMartRestApi
+      ParentId: !GetAtt TechMartRestApi.RootResourceId
+      PathPart: predictions
+
+  ForecastsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref TechMartRestApi
+      ParentId: !GetAtt TechMartRestApi.RootResourceId
+      PathPart: forecasts
+
+  PredictionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref TechMartRestApi
+      ResourceId: !Ref PredictionsResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PredictionFunctionArn}/invocations"
+
+  ForecastsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref TechMartRestApi
+      ResourceId: !Ref ForecastsResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ForecastingFunctionArn}/invocations"
+
+  # CORS - OPTIONS mock untuk /predictions
+  PredictionsOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref TechMartRestApi
+      ResourceId: !Ref PredictionsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Api-Key'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  TechMartDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - PredictionsMethod
+      - ForecastsMethod
+      - PredictionsOptionsMethod
+    Properties:
+      RestApiId: !Ref TechMartRestApi
+
+  ProdStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref TechMartRestApi
+      DeploymentId: !Ref TechMartDeployment
+      StageName: prod
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 50
+          ThrottlingRateLimit: 25
+
+  TechMartApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: ProdStage
+    Properties:
+      Name: techmart-api-key
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref TechMartRestApi
+          StageName: prod
+
+  TechMartUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: ProdStage
+    Properties:
+      UsagePlanName: techmart-usage-plan
+      ApiStages:
+        - ApiId: !Ref TechMartRestApi
+          Stage: prod
+      Throttle:
+        BurstLimit: 50
+        RateLimit: 25
+      Quota:
+        Limit: 10000
+        Period: MONTH
+
+  TechMartUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref TechMartApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref TechMartUsagePlan
+
+Outputs:
+  ApiInvokeUrl:
+    Value: !Sub "https://${TechMartRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  ApiKeyId:
+    Value: !Ref TechMartApiKey

@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TechMart - Glue Database (techmart_database), Crawler (techmart-crawler)
+  yang men-scan raw-data/, dan ETL Job (techmart-etl-job) berbasis PySpark
+  yang menghasilkan output ke processed-data/.
+
+Parameters:
+  ProvinceName:
+    Type: String
+  StudentName:
+    Type: String
+  DataLakeBucketName:
+    Type: String
+    Description: Nama bucket S3 data lake (techmart-ml-<province>-<name>)
+  GlueScriptS3Path:
+    Type: String
+    Description: >
+      Lokasi s3 script ETL (glue-etl/techmart_etl_job.py) yang sudah
+      diupload, contoh: s3://techmart-ml-<province>-<name>/scripts/techmart_etl_job.py
+
+Resources:
+
+  TechMartGlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: techmart_database
+        Description: "Central catalog data untuk pipeline rekomendasi TechMart"
+
+  TechMartCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: techmart-crawler
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      DatabaseName: !Ref TechMartGlueDatabase
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DataLakeBucketName}/raw-data/"
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+
+  TechMartEtlJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: techmart-etl-job
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      GlueVersion: "4.0"
+      Command:
+        Name: glueetl
+        ScriptLocation: !Ref GlueScriptS3Path
+        PythonVersion: "3"
+      DefaultArguments:
+        "--job-language": "python"
+        "--TempDir": !Sub "s3://${DataLakeBucketName}/tmp/"
+        "--source_path": !Sub "s3://${DataLakeBucketName}/raw-data/"
+        "--target_path": !Sub "s3://${DataLakeBucketName}/processed-data/"
+        "--enable-metrics": "true"
+        "--enable-continuous-cloudwatch-log": "true"
+      MaxRetries: 0
+      Timeout: 60
+      WorkerType: G.1X
+      NumberOfWorkers: 2
+
+Outputs:
+  GlueDatabaseName:
+    Value: !Ref TechMartGlueDatabase
+  CrawlerName:
+    Value: !Ref TechMartCrawler
+  EtlJobName:
+    Value: !Ref TechMartEtlJob

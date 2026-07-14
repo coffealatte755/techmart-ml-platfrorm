@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TechMart - ECR repo, ECS Cluster (Fargate), Task Definition, ECS Service
+  (deployment controller CODE_DEPLOY), ALB + 2 Target Group (blue/green),
+  dan AWS CodeDeploy Application + Deployment Group untuk blue/green deploy.
+
+Parameters:
+  ProvinceName:
+    Type: String
+  StudentName:
+    Type: String
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetAId:
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnetBId:
+    Type: AWS::EC2::Subnet::Id
+  SgLoadBalancerId:
+    Type: AWS::EC2::SecurityGroup::Id
+  SgAppsId:
+    Type: AWS::EC2::SecurityGroup::Id
+  ContainerImage:
+    Type: String
+    Description: "URI image ECR, contoh: <account>.dkr.ecr.us-east-1.amazonaws.com/techmart-ecr-<province>-<name>:latest"
+
+Resources:
+
+  TechMartEcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "techmart-ecr-${ProvinceName}-${StudentName}"
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  TechMartEcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "techmart-cluster-${ProvinceName}-${StudentName}"
+      CapacityProviders:
+        - FARGATE
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  TechMartTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "techmart-task-${ProvinceName}-${StudentName}"
+      Cpu: "512"
+      Memory: "1024"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      TaskRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      ContainerDefinitions:
+        - Name: techmart-app
+          Image: !Ref ContainerImage
+          PortMappings:
+            - ContainerPort: 5000
+              Protocol: tcp
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub "/ecs/techmart-${ProvinceName}-${StudentName}"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: techmart
+              awslogs-create-group: "true"
+
+  TechMartAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "techmart-alb-${ProvinceName}-${StudentName}"
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnetAId
+        - !Ref PublicSubnetBId
+      SecurityGroups:
+        - !Ref SgLoadBalancerId
+
+  TechMartTargetGroupBlue:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: techmart-tg-blue
+      Port: 5000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VpcId
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+
+  TechMartTargetGroupGreen:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: techmart-tg-green
+      Port: 5000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VpcId
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+
+  TechMartAlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref TechMartAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TechMartTargetGroupBlue
+
+  TechMartEcsService:
+    Type: AWS::ECS::Service
+    DependsOn: TechMartAlbListener
+    Properties:
+      ServiceName: !Sub "techmart-service-${ProvinceName}-${StudentName}"
+      Cluster: !Ref TechMartEcsCluster
+      TaskDefinition: !Ref TechMartTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      DeploymentController:
+        Type: CODE_DEPLOY
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref PublicSubnetAId
+            - !Ref PublicSubnetBId
+          SecurityGroups:
+            - !Ref SgAppsId
+      LoadBalancers:
+        - ContainerName: techmart-app
+          ContainerPort: 5000
+          TargetGroupArn: !Ref TechMartTargetGroupBlue
+
+  TechMartCodeDeployApp:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub "techmart-codedeploy-app-${ProvinceName}-${StudentName}"
+      ComputePlatform: ECS
+
+  TechMartDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref TechMartCodeDeployApp
+      DeploymentGroupName: !Sub "techmart-deployment-group-${ProvinceName}-${StudentName}"
+      ServiceRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
+      DeploymentStyle:
+        DeploymentType: BLUE_GREEN
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      BlueGreenDeploymentConfiguration:
+        TerminateBlueInstancesOnDeploymentSuccess:
+          Action: TERMINATE
+          TerminationWaitTimeInMinutes: 5
+        DeploymentReadyOption:
+          ActionOnTimeout: CONTINUE_DEPLOYMENT
+      ECSServices:
+        - ClusterName: !Ref TechMartEcsCluster
+          ServiceName: !GetAtt TechMartEcsService.Name
+      LoadBalancerInfo:
+        TargetGroupPairInfoList:
+          - ProdTrafficRoute:
+              ListenerArns:
+                - !Ref TechMartAlbListener
+            TargetGroups:
+              - Name: !GetAtt TechMartTargetGroupBlue.TargetGroupName
+              - Name: !GetAtt TechMartTargetGroupGreen.TargetGroupName
+
+Outputs:
+  EcrRepositoryUri:
+    Value: !GetAtt TechMartEcrRepo.RepositoryUri
+  AlbDnsName:
+    Value: !GetAtt TechMartAlb.DNSName
+  EcsClusterName:
+    Value: !Ref TechMartEcsCluster
+  EcsServiceName:
+    Value: !GetAtt TechMartEcsService.Name
+  CodeDeployApplicationName:
+    Value: !Ref TechMartCodeDeployApp
+  CodeDeployDeploymentGroupName:
+    Value: !Ref TechMartDeploymentGroup

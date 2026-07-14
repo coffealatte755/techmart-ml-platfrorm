@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TechMart - SageMaker Notebook Instance untuk eksplorasi data dan
+  training model rekomendasi (hybrid: collaborative + content-based).
+
+Parameters:
+  ProvinceName:
+    Type: String
+  StudentName:
+    Type: String
+
+Resources:
+  TechMartNotebookInstance:
+    Type: AWS::SageMaker::NotebookInstance
+    Properties:
+      NotebookInstanceName: !Sub "techmart-ml-${ProvinceName}-${StudentName}"
+      InstanceType: ml.t3.medium
+      RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      VolumeSizeInGB: 20
+      DirectInternetAccess: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-ml-${ProvinceName}-${StudentName}"
+
+Outputs:
+  NotebookInstanceName:
+    Value: !Ref TechMartNotebookInstance
+  NotebookInstanceArn:
+    Value: !Ref TechMartNotebookInstance

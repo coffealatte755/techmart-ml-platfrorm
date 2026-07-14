@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TechMart - S3 Data Lake bucket dengan struktur raw-data/ (publik),
+  models/ (publik + lifecycle IA 30 hari, expire 365 hari),
+  processed-data/ (privat), logs/ (privat + IP whitelist).
+
+Parameters:
+  ProvinceName:
+    Type: String
+  StudentName:
+    Type: String
+  LogsWhitelistCidr:
+    Type: String
+    Description: CIDR yang diizinkan mengakses logs/
+
+Resources:
+  TechMartDataLakeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "techmart-ml-${ProvinceName}-${StudentName}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      LifecycleConfiguration:
+        Rules:
+          - Id: models-lifecycle
+            Status: Enabled
+            Prefix: models/
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+            ExpirationInDays: 365
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-ml-${ProvinceName}-${StudentName}"
+
+  TechMartDataLakeBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TechMartDataLakeBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # raw-data/ publik dibaca siapa saja (ingest dari luar)
+          - Sid: PublicReadRawData
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${TechMartDataLakeBucket.Arn}/raw-data/*"
+
+          # models/ publik dibaca siapa saja
+          - Sid: PublicReadModels
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${TechMartDataLakeBucket.Arn}/models/*"
+
+          # processed-data/ privat - tolak akses publik non-IAM
+          - Sid: DenyPublicProcessedData
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: !Sub "${TechMartDataLakeBucket.Arn}/processed-data/*"
+            Condition:
+              StringNotLike:
+                aws:PrincipalArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+
+          # logs/ privat + hanya IP whitelist yang boleh akses
+          - Sid: AllowLogsFromWhitelistIpOnly
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: !Sub "${TechMartDataLakeBucket.Arn}/logs/*"
+            Condition:
+              NotIpAddress:
+                aws:SourceIp: !Ref LogsWhitelistCidr
+              StringNotLike:
+                aws:PrincipalArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+
+Outputs:
+  BucketName:
+    Value: !Ref TechMartDataLakeBucket
+    Export:
+      Name: techmart-datalake-bucket-name
+  BucketArn:
+    Value: !GetAtt TechMartDataLakeBucket.Arn
+    Export:
+      Name: techmart-datalake-bucket-arn

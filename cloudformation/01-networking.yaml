@@ -1,0 +1,268 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TechMart - Networking layer: VPC (dual-stack IPv4/IPv6), 2 public subnet,
+  2 private subnet, IGW, NAT instance untuk private subnet, route table,
+  dan security group (techmart-sg-lb, techmart-sg-apps).
+
+Parameters:
+  ProvinceName:
+    Type: String
+  StudentName:
+    Type: String
+  NatInstanceAmiId:
+    Type: String
+    Default: ami-0015c0130d6cc5da7
+  DefaultInstanceType:
+    Type: String
+    Default: t3.large
+
+Resources:
+
+  ### VPC ###
+  TechMartVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 30.2.0.0/20
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-${ProvinceName}-${StudentName}"
+
+  VpcIpv6CidrBlock:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      VpcId: !Ref TechMartVPC
+      AmazonProvidedIpv6CidrBlock: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-igw-${ProvinceName}-${StudentName}"
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref TechMartVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  ### Public Subnets ###
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref TechMartVPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 30.2.0.0/25
+      Ipv6CidrBlock: !Select [0, !Cidr [!Select [0, !GetAtt TechMartVPC.Ipv6CidrBlocks], 4, 64]]
+      MapPublicIpOnLaunch: true
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-public-a-${ProvinceName}-${StudentName}"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref TechMartVPC
+      AvailabilityZone: us-east-1b
+      CidrBlock: 30.2.2.0/25
+      Ipv6CidrBlock: !Select [1, !Cidr [!Select [0, !GetAtt TechMartVPC.Ipv6CidrBlocks], 4, 64]]
+      MapPublicIpOnLaunch: true
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-public-b-${ProvinceName}-${StudentName}"
+
+  ### Private Subnets ###
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref TechMartVPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 30.2.1.0/25
+      Ipv6CidrBlock: !Select [2, !Cidr [!Select [0, !GetAtt TechMartVPC.Ipv6CidrBlocks], 4, 64]]
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-private-a-${ProvinceName}-${StudentName}"
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref TechMartVPC
+      AvailabilityZone: us-east-1b
+      CidrBlock: 30.2.3.0/25
+      Ipv6CidrBlock: !Select [3, !Cidr [!Select [0, !GetAtt TechMartVPC.Ipv6CidrBlocks], 4, 64]]
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-private-b-${ProvinceName}-${StudentName}"
+
+  ### Route Tables ###
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TechMartVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-rt-public-${ProvinceName}-${StudentName}"
+
+  PublicRouteIpv4:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteIpv6:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationIpv6CidrBlock: ::/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TechMartVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-rt-private-${ProvinceName}-${StudentName}"
+
+  PrivateRouteToNat:
+    Type: AWS::EC2::Route
+    DependsOn: NatInstance
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref NatInstance
+
+  PrivateSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  ### Security Groups ###
+  SgLoadBalancer:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: techmart-sg-lb
+      GroupDescription: "SG untuk Load Balancer - HTTP/HTTPS publik"
+      VpcId: !Ref TechMartVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: techmart-sg-lb
+
+  SgApps:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: techmart-sg-apps
+      GroupDescription: "SG untuk aplikasi container - port 5000 publik"
+      VpcId: !Ref TechMartVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: techmart-sg-apps
+
+  SgNat:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "techmart-sg-nat-${ProvinceName}-${StudentName}"
+      GroupDescription: "SG untuk NAT instance - menerima traffic dari subnet privat"
+      VpcId: !Ref TechMartVPC
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 30.2.0.0/20
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  ### NAT Instance (menggantikan NAT Gateway) ###
+  NatInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref NatInstanceAmiId
+      InstanceType: !Ref DefaultInstanceType
+      SubnetId: !Ref PublicSubnetA
+      SourceDestCheck: false
+      SecurityGroupIds:
+        - !Ref SgNat
+      Tags:
+        - Key: Name
+          Value: !Sub "techmart-nat-${ProvinceName}-${StudentName}"
+
+Outputs:
+  VpcId:
+    Value: !Ref TechMartVPC
+    Export:
+      Name: techmart-vpc-id
+  PublicSubnetAId:
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: techmart-public-subnet-a
+  PublicSubnetBId:
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: techmart-public-subnet-b
+  PrivateSubnetAId:
+    Value: !Ref PrivateSubnetA
+    Export:
+      Name: techmart-private-subnet-a
+  PrivateSubnetBId:
+    Value: !Ref PrivateSubnetB
+    Export:
+      Name: techmart-private-subnet-b
+  SgLoadBalancerId:
+    Value: !Ref SgLoadBalancer
+    Export:
+      Name: techmart-sg-lb-id
+  SgAppsId:
+    Value: !Ref SgApps
+    Export:
+      Name: techmart-sg-apps-id

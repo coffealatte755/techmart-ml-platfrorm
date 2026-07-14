@@ -1,0 +1,8 @@
+# Salin file ini menjadi 00-parameters.yaml lalu sesuaikan.
+# Dipakai sebagai referensi nilai --parameter-overrides di scripts/deploy_all.sh
+ProvinceName: kepri
+StudentName: yourname
+NotificationEmail: handi@seamolec.org
+NatInstanceAmiId: ami-0015c0130d6cc5da7
+DefaultInstanceType: t3.large
+LogsWhitelistCidr: 203.0.113.0/24   # ganti dengan IP whitelist yang sah
