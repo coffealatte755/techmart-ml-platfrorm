@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+cloudformation/00-parameters.yaml
+dataset-generation/output/
+*.zip
+.DS_Store
