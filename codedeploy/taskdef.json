@@ -1,0 +1,41 @@
+{
+  "family": "techmart-task-<province>-<name>",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/LabRole",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/LabRole",
+  "containerDefinitions": [
+    {
+      "name": "techmart-app",
+      "image": "<IMAGE1_NAME>",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 5000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "TECHMART_API_BASE_URL",
+          "value": "https://<api-id>.execute-api.us-east-1.amazonaws.com/prod"
+        },
+        {
+          "name": "TECHMART_API_KEY",
+          "value": "<TECHMART_API_KEY>"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/techmart-<province>-<name>",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "techmart",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

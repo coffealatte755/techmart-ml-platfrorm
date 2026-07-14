@@ -1,0 +1,16 @@
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: <TASK_DEFINITION_ARN>
+        LoadBalancerInfo:
+          ContainerName: "techmart-app"
+          ContainerPort: 5000
+        PlatformVersion: "LATEST"
+Hooks:
+  - BeforeInstall: ""
+  - AfterInstall: ""
+  - AfterAllowTestTraffic: ""
+  - BeforeAllowTraffic: ""
+  - AfterAllowTraffic: ""
